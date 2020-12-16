@@ -1478,32 +1478,37 @@ if($datatype=='get_memberlist'){
 		$datetype = $_REQUEST['datetype']; //0-全部，1-本月生日， 2-三天内生日，3-本月未消费，4-七天未消费
     //$sql = "select a.*,c.img,c.name as cardtype,FROM_UNIXTIME(b.dateline,'%Y-%m-%d') as card_addtime from fly_member as a left join a_card_member as b on b.member_id=a.member_id left join a_card as c on c.id=b.card_id where a.storeid=$storeid and b.shop_id=$storeid";
     //$sql ="select a.*,FROM_UNIXTIME(a.dateline,'%Y-%m-%d') as card_addtime from fly_member a where a.storeid=$storeid and b.shop_id=$storeid";
-    $sql ="select a.*,adt as card_addtime from fly_member a where a.storeid=$storeid";
+    $sql ="select a.*,adt as card_addtime,b.realname,b.nickname from fly_member as a left join users_miniprogram as b on a.user_id=b.id where a.storeid=$storeid";
     if($sign==1){
-        $sql .= " and status<9";
+        $sql .= " and a.status<9";
     }else{
-        $sql .= " and status<3";
+        $sql .= " and a.status<3";
     }
     if($search){
-        $sql .= " and (a.name like '%$search%' or a.mobile like '%$search%')";
+        $sql .= " and (a.name like '%$search%' or a.mobile like '%$search%' or b.realname like '%$search%')";
     }
     if($page_size>0){
         $sql .=" order by a.member_id desc limit $page_num,$page_size";
     }
 		if($datetype&&$datetype>0){
-			if($datetype==1){
-				 $sql .=" and (Month(birthday1)=Month(NOW()))";
-			}elseif($datetype==2){
-				$sql .= " and ( DATE_FORMAT(birthday1,'%m-%d') BETWEEN DATE_FORMAT(NOW(),'%m-%d')
-AND DATE_FORMAT(CURDATE()+INTERVAL 3 DAY,'%m-%d'))";
-			}elseif($datetype==3){
-				$sql .=" and (DATE_FORMAT(FROM_UNIXTIME(last_time),'%y-%m')!=DATE_FORMAT(NOW(),'%y-%m'))";
-			}elseif($datetype==4){
-				$sql .=" and (!(DATE_FORMAT(FROM_UNIXTIME(last_time),'%y-%m-%d') BETWEEN DATE_FORMAT(NOW(),'%y-%m-%d') AND DATE_FORMAT(NOW()+INTERVAL 7 DAY,'%y-%m-%d')))";
-			}
-		};
+					if($datetype==1){
+						 $sql .=" and (Month(birthday1)=Month(NOW()))";
+					}elseif($datetype==2){
+						$sql .= " and ( DATE_FORMAT(birthday1,'%m-%d') BETWEEN DATE_FORMAT(NOW(),'%m-%d')
+		AND DATE_FORMAT(CURDATE()+INTERVAL 3 DAY,'%m-%d'))";
+					}elseif($datetype==3){
+						$sql .=" and (DATE_FORMAT(FROM_UNIXTIME(last_time),'%y-%m')!=DATE_FORMAT(NOW(),'%y-%m'))";
+					}elseif($datetype==4){
+						$sql .=" and (!(DATE_FORMAT(FROM_UNIXTIME(last_time),'%y-%m-%d') BETWEEN DATE_FORMAT(NOW(),'%y-%m-%d') AND DATE_FORMAT(NOW()+INTERVAL 7 DAY,'%y-%m-%d')))";
+					}
+				};
   //  echo $sql;exit;
     $list = $db->get_results($sql);
+		foreach($list as $k=>$v){
+			if($v['realname']){
+				$list[$k]['name']=$v['realname'];
+			}
+		}
     $sql = str_replace('select ','select count(a.member_id) as ncount,',$sql);
     $count = $db->get_row($sql);
     $count = $count['ncount'];
@@ -1695,7 +1700,7 @@ if($datatype=='get_member_moneydetail'){
             $sql .=" and (type like'充值%' or type='卖卡' or type like '会员卡%')";
         }else{
             $sql .=" and type='收银'";
-        }
+        }
 				$sql .=" order by dateline desc";
     }
     $list = $db->get_results($sql);
@@ -1901,229 +1906,229 @@ if($datatype=='get_one_orderByNo'){  //
     echo json_encode($res);
 }
 
-//结账
-if($datatype=='pay_order'){
-    $storeid = $_REQUEST['storeid'];
-    $order_id = $_REQUEST['order_id'];
-    $pay_type = $_REQUEST['pay_type'];
-
-		//混合支付
-    $full_price = $_REQUEST['full_price'];//会员使用了非会员支付方式
-    $v_amount = $_REQUEST['v_amount'];//抵用券金额
+//结账
+if($datatype=='pay_order'){
+    $storeid = $_REQUEST['storeid'];
+    $order_id = $_REQUEST['order_id'];
+    $pay_type = $_REQUEST['pay_type'];
+
+		//混合支付
+    $full_price = $_REQUEST['full_price'];//会员使用了非会员支付方式
+    $v_amount = $_REQUEST['v_amount'];//抵用券金额
     $v_id = $_REQUEST['v_id'];//member_抵用券id
-		
-		$mixedinfo_json= $_REQUEST['mixedinfo'];//混合支付详细
-		$mixedinfo=json_decode($mixedinfo_json,true);
-    $order = $db->get_row("select * from a_order where id=$order_id");
+		
+		$mixedinfo_json= $_REQUEST['mixedinfo'];//混合支付详细
+		$mixedinfo=json_decode($mixedinfo_json,true);
+    $order = $db->get_row("select * from a_order where id=$order_id");
     $detailarr = $db->get_results("select * from a_order_detail where order_id=$order_id");
-
-    if($order['customer_type']==1 && $order['member_id']==0){  //非会员
-     //   echo "update a_order set status=3,pay_type='$pay_type',paytime=$dateline where id=$order_id";exit;
-			$db->query("update a_order set status=3,pay_type='$pay_type',mixedinfo='$mixedinfo_json',paytime=$dateline where id=$order_id");
-			if($pay_type=='mixed'){
-				foreach($mixedinfo as $k=>$v){
-					$money=round($v, 2);
-					if($money>0){
-						$sql="insert into a_order_pay_type (order_id,pay_type,pay_money) values ($order_id, '{$k}','{$money}')";
-						$db->query($sql);
-					}
-					
-				}				
-			}
-			//die();
-        foreach ($detailarr as $v){
-            if($v['typeid']==2){//产品
-                $goods_sku= $db->get_var("select `number` from a_stock_goods_sku where storeid=$storeid and goods_id={$v['itemid']}");
-                /*if($goods_sku<$v['num']){
-                    $res = array('code'=>4,'msg'=>'产品库存不足');
-                    echo json_encode($res); exit;
-                }*/
-                //改库存表
-                $db->query("update a_stock_goods_sku set `number`=`number`-{$v['num']} where goods_id={$v['itemid']}");
-                $db->query("insert into a_stock_goods_skudetail(storeid,`type`,stock_no,goods_id,old_num,new_num,`change`,dateline) values ($storeid,'出库','{$order['order_no']}',{$v['itemid']},$goods_sku,$goods_sku-{$v['num']},'-{$v['num']}',$dateline)");
-            }
-        }
-
-    }else{ //会员
-			$balance = $db->get_var("select balance from fly_member where member_id={$order['member_id']} and storeid=$storeid");
-        $user_id = $db->get_var("select user_id from fly_member where member_id={$order['member_id']} and storeid=$storeid");
-        if(!$user_id){
-            $user_id=0;
-        }
-			if($pay_type=='mixed'){
-				foreach($mixedinfo as $k=>$v){
-					$money=round($v, 2);
-					if($money>0){
-						$sql="insert into a_order_pay_type (order_id,pay_type,pay_money) values ($order_id, '{$k}','{$money}')";
-						$db->query($sql);
-					}
-				}
-			}else{
-				
-        if($pay_type=='card'){
-            if($balance<$order['dis_total']){
-                $res = array('code'=>3,'msg'=>'会员余额不够');
-                echo json_encode($res); exit;
-            }
-        }
-			}
-        
-
-    //    $db->query("start transaction");
-        //查询次卡次数
-        $detailarr = $db->get_results("select * from a_order_detail where order_id=$order_id");
-        $count =0;
-        foreach ($detailarr as $v){
-            if($v['typeid']==2){//产品
-                $goods_sku= $db->get_var("select `number` from a_stock_goods_sku where storeid=$storeid and goods_id={$v['itemid']}");
-                /*if($goods_sku<$v['num']){
-                    $res = array('code'=>4,'msg'=>'产品库存不足');
-                    echo json_encode($res); exit;
-                }*/
-             //   echo "update a_stock_goods_sku set `number`=`number`-{$v['num']} where goods_id={$v['itemid']}";exit;
-                //改库存表
-                $db->query("update a_stock_goods_sku set `number`=`number`-{$v['num']} where goods_id={$v['itemid']}");
-            //    echo "insert into a_stock_goods_skudetail(storeid,`type`,stock_no,goods_id,old_num,new_num,`change`,dateline) values ($storeid,'出库','{$order['order_no']}',{$v['itemid']},$goods_sku,$goods_sku-{$v['num']},'-{$v['num']}',$dateline)";
-                $db->query("insert into a_stock_goods_skudetail(storeid,`type`,stock_no,goods_id,old_num,new_num,`change`,dateline) values ($storeid,'出库','{$order['order_no']}',{$v['itemid']},$goods_sku,$goods_sku-{$v['num']},'-{$v['num']}',$dateline)");
-            }
-            if($v['is_usecard']==1){//次卡
-                $cicard = $db->get_row("select a.rest_count,b.typeid from a_card_memberitem a left join a_cicard b on b.id=a.cicard_id where a.id={$v['card_memberitem_id']}");
-                if($cicard['typeid']==1){
-                    if($cicard['rest_count']<$v['num']){
-                        $res = array('code'=>2,'msg'=>'会员次卡次数不够');
-                        echo json_encode($res); exit;
-                    }else{  //使用会员卡并且剩下次数充足
-
-                        $old_ci = $cicard['rest_count'];
-
-                        $new_ci = $old_ci-$v['num'];
-                     //   echo "update a_card_memberitem set rest_count=rest_count-{$v['num']} where id={$v['card_memberitem_id']}";
-                    //    echo "------insert into a_member_cidetail(storeid,member_id,itemid,old_ci,new_ci,`change`,order_no,`type`,dateline,user_id) values($storeid,{$order['member_id']},{$v['itemid']},$old_ci,$new_ci,'-{$v['num']}','{$order['order_no']}','收银',$dateline,$user_id)";exit;
-                        $db->query("update a_card_memberitem set rest_count=rest_count-{$v['num']} where id={$v['card_memberitem_id']}");
-                        $db->query("insert into a_member_cidetail(storeid,member_id,itemid,old_ci,new_ci,`change`,order_no,`type`,dateline,user_id) values($storeid,{$order['member_id']},{$v['itemid']},$old_ci,$new_ci,'-{$v['num']}','{$order['order_no']}','收银',$dateline,$user_id)");
-                    }
-                }
-
-            }
-        }
-        $db->query("update a_order set status=3,pay_type='$pay_type',mixedinfo='$mixedinfo_json',paytime=$dateline where id=$order_id");
-				if($pay_type=='mixed'){
-					foreach($mixedinfo as $k=>$v){
-						$paytype=$k;
-						$new_price=round($v, 2);
-						if($new_price>0){
-							if($paytype=='signbill'){  //签单
-									$db->query("start transaction");
-									
-									$db->query("insert into a_member_signbill_list(storeid,member_id,order_no,money,dateline) values({$order['storeid']},{$order['member_id']},'{$order['order_no']}','{$new_price}',$dateline)");
-									if($db->insert_id){
-											$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,signbill=signbill+$new_price where member_id={$order['member_id']} and storeid=$storeid");
-											$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'signbill')");
-											$db->query("commit");
-									}else{
-											$db->query("rollback");
-									}
-
-							}elseif($paytype=='card'){
-									if($v_id && $v_amount){ //只有会员卡支付才能有抵用券
-											//if($v_amount>$order['dis_total']){
-											//		$v_amount=$order['dis_total'];
-											//}
-											$db->query("update a_member_voucher set order_id=$order_id,status=2 where id=$v_id");
-											$db->query("update a_order set dis_total=dis_total-$v_amount where id=$order_id");
-									}
-									//$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
-									$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,balance=balance-$new_price where member_id={$order['member_id']} and storeid=$storeid");
-									$db->query("update a_card_member set price=price-$new_price where member_id={$order['member_id']} and shop_id=$storeid");
-
-
-									 $old_money = $balance;
-
-									$new_money = $old_money-$new_price;
-									//echo "insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')";
-									$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')");
-
-							}else{  //其他方式结账
-									if($full_price){
-											$db->query("update a_order set dis_total=$full_price where id=$order_id");
-									}
-									//$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
-									$integral = $db->get_var("select integral from fly_member where member_id={$order['member_id']} and storeid=$storeid");
-									$db->query("update fly_member set integral=integral+$new_price,total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1 where member_id={$order['member_id']} and storeid=$storeid");
-									$db->query("insert into mini_integral_list(user_id,member_id,shop_id,charge,balance,`desc`,dateline) values ($user_id,{$order['member_id']},$storeid,'+$new_price',$integral+$new_price,'门店消费',$dateline)");
-									$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'$paytype')");
-							}
-						}
-					}
-				}else{
-
-					if($pay_type=='signbill'){  //签单
-							$db->query("start transaction");
-							if($full_price){
-									$db->query("update a_order set dis_total=$full_price where id=$order_id");
-							}
-							$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
-							$db->query("insert into a_member_signbill_list(storeid,member_id,order_no,money,dateline) values({$order['storeid']},{$order['member_id']},'{$order['order_no']}',$new_price,$dateline)");
-							if($db->insert_id){
-									$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,signbill=signbill+$new_price where member_id={$order['member_id']} and storeid=$storeid");
-									$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'signbill')");
-									$db->query("commit");
-							}else{
-									$db->query("rollback");
-							}
-
-					}elseif($pay_type=='card'){
-							if($v_id && $v_amount){ //只有会员卡支付才能有抵用券
-									if($v_amount>$order['dis_total']){
-											$v_amount=$order['dis_total'];
-									}
-									$db->query("update a_member_voucher set order_id=$order_id,status=2 where id=$v_id");
-									$db->query("update a_order set dis_total=dis_total-$v_amount where id=$order_id");
-							}
-							$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
-							$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,balance=balance-$new_price where member_id={$order['member_id']} and storeid=$storeid");
-							$db->query("update a_card_member set price=price-$new_price where member_id={$order['member_id']} and shop_id=$storeid");
-
-
-							 $old_money = $balance;
-
-							$new_money = $old_money-$new_price;
-							//echo "insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')";
-							$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')");
-
-					}else{  //其他方式结账
-							if($full_price){
-									$db->query("update a_order set dis_total=$full_price where id=$order_id");
-							}
-							$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
-							$integral = $db->get_var("select integral from fly_member where member_id={$order['member_id']} and storeid=$storeid");
-							$db->query("update fly_member set integral=integral+$new_price,total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1 where member_id={$order['member_id']} and storeid=$storeid");
-							$db->query("insert into mini_integral_list(user_id,member_id,shop_id,charge,balance,`desc`,dateline) values ($user_id,{$order['member_id']},$storeid,'+$new_price',$integral+$new_price,'门店消费',$dateline)");
-							$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'$pay_type')");
-
-
-					}
-				}
-    }
-    $res = array('code'=>1,'msg'=>'成功');
-    echo json_encode($res);
-}
-
-// 修改密码
-if($datatype=='update_password'){
-	$username = $_REQUEST['username'];
-	$password = $_REQUEST['password'];
-	$newpass = $_REQUEST['newpass'];
-	$userid = $db->get_var("select id from a_staff where username='$username' and password='$password'");
-	if($username&&$password&&$userid>0){
-		$db->query("update a_staff set password='$newpass' where id='$userid'");
-		$res = array('code'=>1,'msg'=>'更新成功,重新登陆');
-	}else{
-		$res =  array('code'=>2,'msg'=>'账号或密码错误');
-	}
-	echo json_encode($res);
-}
-
+
+    if($order['customer_type']==1 && $order['member_id']==0){  //非会员
+     //   echo "update a_order set status=3,pay_type='$pay_type',paytime=$dateline where id=$order_id";exit;
+			$db->query("update a_order set status=3,pay_type='$pay_type',mixedinfo='$mixedinfo_json',paytime=$dateline where id=$order_id");
+			if($pay_type=='mixed'){
+				foreach($mixedinfo as $k=>$v){
+					$money=round($v, 2);
+					if($money>0){
+						$sql="insert into a_order_pay_type (order_id,pay_type,pay_money) values ($order_id, '{$k}','{$money}')";
+						$db->query($sql);
+					}
+					
+				}				
+			}
+			//die();
+        foreach ($detailarr as $v){
+            if($v['typeid']==2){//产品
+                $goods_sku= $db->get_var("select `number` from a_stock_goods_sku where storeid=$storeid and goods_id={$v['itemid']}");
+                /*if($goods_sku<$v['num']){
+                    $res = array('code'=>4,'msg'=>'产品库存不足');
+                    echo json_encode($res); exit;
+                }*/
+                //改库存表
+                $db->query("update a_stock_goods_sku set `number`=`number`-{$v['num']} where goods_id={$v['itemid']}");
+                $db->query("insert into a_stock_goods_skudetail(storeid,`type`,stock_no,goods_id,old_num,new_num,`change`,dateline) values ($storeid,'出库','{$order['order_no']}',{$v['itemid']},$goods_sku,$goods_sku-{$v['num']},'-{$v['num']}',$dateline)");
+            }
+        }
+
+    }else{ //会员
+			$balance = $db->get_var("select balance from fly_member where member_id={$order['member_id']} and storeid=$storeid");
+        $user_id = $db->get_var("select user_id from fly_member where member_id={$order['member_id']} and storeid=$storeid");
+        if(!$user_id){
+            $user_id=0;
+        }
+			if($pay_type=='mixed'){
+				foreach($mixedinfo as $k=>$v){
+					$money=round($v, 2);
+					if($money>0){
+						$sql="insert into a_order_pay_type (order_id,pay_type,pay_money) values ($order_id, '{$k}','{$money}')";
+						$db->query($sql);
+					}
+				}
+			}else{
+				
+        if($pay_type=='card'){
+            if($balance<$order['dis_total']){
+                $res = array('code'=>3,'msg'=>'会员余额不够');
+                echo json_encode($res); exit;
+            }
+        }
+			}
+        
+
+    //    $db->query("start transaction");
+        //查询次卡次数
+        $detailarr = $db->get_results("select * from a_order_detail where order_id=$order_id");
+        $count =0;
+        foreach ($detailarr as $v){
+            if($v['typeid']==2){//产品
+                $goods_sku= $db->get_var("select `number` from a_stock_goods_sku where storeid=$storeid and goods_id={$v['itemid']}");
+                /*if($goods_sku<$v['num']){
+                    $res = array('code'=>4,'msg'=>'产品库存不足');
+                    echo json_encode($res); exit;
+                }*/
+             //   echo "update a_stock_goods_sku set `number`=`number`-{$v['num']} where goods_id={$v['itemid']}";exit;
+                //改库存表
+                $db->query("update a_stock_goods_sku set `number`=`number`-{$v['num']} where goods_id={$v['itemid']}");
+            //    echo "insert into a_stock_goods_skudetail(storeid,`type`,stock_no,goods_id,old_num,new_num,`change`,dateline) values ($storeid,'出库','{$order['order_no']}',{$v['itemid']},$goods_sku,$goods_sku-{$v['num']},'-{$v['num']}',$dateline)";
+                $db->query("insert into a_stock_goods_skudetail(storeid,`type`,stock_no,goods_id,old_num,new_num,`change`,dateline) values ($storeid,'出库','{$order['order_no']}',{$v['itemid']},$goods_sku,$goods_sku-{$v['num']},'-{$v['num']}',$dateline)");
+            }
+            if($v['is_usecard']==1){//次卡
+                $cicard = $db->get_row("select a.rest_count,b.typeid from a_card_memberitem a left join a_cicard b on b.id=a.cicard_id where a.id={$v['card_memberitem_id']}");
+                if($cicard['typeid']==1){
+                    if($cicard['rest_count']<$v['num']){
+                        $res = array('code'=>2,'msg'=>'会员次卡次数不够');
+                        echo json_encode($res); exit;
+                    }else{  //使用会员卡并且剩下次数充足
+
+                        $old_ci = $cicard['rest_count'];
+
+                        $new_ci = $old_ci-$v['num'];
+                     //   echo "update a_card_memberitem set rest_count=rest_count-{$v['num']} where id={$v['card_memberitem_id']}";
+                    //    echo "------insert into a_member_cidetail(storeid,member_id,itemid,old_ci,new_ci,`change`,order_no,`type`,dateline,user_id) values($storeid,{$order['member_id']},{$v['itemid']},$old_ci,$new_ci,'-{$v['num']}','{$order['order_no']}','收银',$dateline,$user_id)";exit;
+                        $db->query("update a_card_memberitem set rest_count=rest_count-{$v['num']} where id={$v['card_memberitem_id']}");
+                        $db->query("insert into a_member_cidetail(storeid,member_id,itemid,old_ci,new_ci,`change`,order_no,`type`,dateline,user_id) values($storeid,{$order['member_id']},{$v['itemid']},$old_ci,$new_ci,'-{$v['num']}','{$order['order_no']}','收银',$dateline,$user_id)");
+                    }
+                }
+
+            }
+        }
+        $db->query("update a_order set status=3,pay_type='$pay_type',mixedinfo='$mixedinfo_json',paytime=$dateline where id=$order_id");
+				if($pay_type=='mixed'){
+					foreach($mixedinfo as $k=>$v){
+						$paytype=$k;
+						$new_price=round($v, 2);
+						if($new_price>0){
+							if($paytype=='signbill'){  //签单
+									$db->query("start transaction");
+									
+									$db->query("insert into a_member_signbill_list(storeid,member_id,order_no,money,dateline) values({$order['storeid']},{$order['member_id']},'{$order['order_no']}','{$new_price}',$dateline)");
+									if($db->insert_id){
+											$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,signbill=signbill+$new_price where member_id={$order['member_id']} and storeid=$storeid");
+											$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'signbill')");
+											$db->query("commit");
+									}else{
+											$db->query("rollback");
+									}
+
+							}elseif($paytype=='card'){
+									if($v_id && $v_amount){ //只有会员卡支付才能有抵用券
+											//if($v_amount>$order['dis_total']){
+											//		$v_amount=$order['dis_total'];
+											//}
+											$db->query("update a_member_voucher set order_id=$order_id,status=2 where id=$v_id");
+											$db->query("update a_order set dis_total=dis_total-$v_amount where id=$order_id");
+									}
+									//$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
+									$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,balance=balance-$new_price where member_id={$order['member_id']} and storeid=$storeid");
+									$db->query("update a_card_member set price=price-$new_price where member_id={$order['member_id']} and shop_id=$storeid");
+
+
+									 $old_money = $balance;
+
+									$new_money = $old_money-$new_price;
+									//echo "insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')";
+									$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')");
+
+							}else{  //其他方式结账
+									if($full_price){
+											$db->query("update a_order set dis_total=$full_price where id=$order_id");
+									}
+									//$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
+									$integral = $db->get_var("select integral from fly_member where member_id={$order['member_id']} and storeid=$storeid");
+									$db->query("update fly_member set integral=integral+$new_price,total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1 where member_id={$order['member_id']} and storeid=$storeid");
+									$db->query("insert into mini_integral_list(user_id,member_id,shop_id,charge,balance,`desc`,dateline) values ($user_id,{$order['member_id']},$storeid,'+$new_price',$integral+$new_price,'门店消费',$dateline)");
+									$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'$paytype')");
+							}
+						}
+					}
+				}else{
+
+					if($pay_type=='signbill'){  //签单
+							$db->query("start transaction");
+							if($full_price){
+									$db->query("update a_order set dis_total=$full_price where id=$order_id");
+							}
+							$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
+							$db->query("insert into a_member_signbill_list(storeid,member_id,order_no,money,dateline) values({$order['storeid']},{$order['member_id']},'{$order['order_no']}',$new_price,$dateline)");
+							if($db->insert_id){
+									$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,signbill=signbill+$new_price where member_id={$order['member_id']} and storeid=$storeid");
+									$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'signbill')");
+									$db->query("commit");
+							}else{
+									$db->query("rollback");
+							}
+
+					}elseif($pay_type=='card'){
+							if($v_id && $v_amount){ //只有会员卡支付才能有抵用券
+									if($v_amount>$order['dis_total']){
+											$v_amount=$order['dis_total'];
+									}
+									$db->query("update a_member_voucher set order_id=$order_id,status=2 where id=$v_id");
+									$db->query("update a_order set dis_total=dis_total-$v_amount where id=$order_id");
+							}
+							$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
+							$db->query("update fly_member set total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1,balance=balance-$new_price where member_id={$order['member_id']} and storeid=$storeid");
+							$db->query("update a_card_member set price=price-$new_price where member_id={$order['member_id']} and shop_id=$storeid");
+
+
+							 $old_money = $balance;
+
+							$new_money = $old_money-$new_price;
+							//echo "insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')";
+							$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$old_money,$new_money,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'card')");
+
+					}else{  //其他方式结账
+							if($full_price){
+									$db->query("update a_order set dis_total=$full_price where id=$order_id");
+							}
+							$new_price = $db->get_var("select dis_total from a_order where id=$order_id");
+							$integral = $db->get_var("select integral from fly_member where member_id={$order['member_id']} and storeid=$storeid");
+							$db->query("update fly_member set integral=integral+$new_price,total_pay=total_pay+$new_price,last_time=$dateline,instore_count=instore_count+1 where member_id={$order['member_id']} and storeid=$storeid");
+							$db->query("insert into mini_integral_list(user_id,member_id,shop_id,charge,balance,`desc`,dateline) values ($user_id,{$order['member_id']},$storeid,'+$new_price',$integral+$new_price,'门店消费',$dateline)");
+							$db->query("insert into a_member_moneydetail(storeid,member_id,old_money,balance,`change`,order_no,`type`,dateline,user_id,pay_type) values($storeid,{$order['member_id']},$balance,$balance,'-$new_price','{$order['order_no']}','收银',$dateline,$user_id,'$pay_type')");
+
+
+					}
+				}
+    }
+    $res = array('code'=>1,'msg'=>'成功');
+    echo json_encode($res);
+}
+
+// 修改密码
+if($datatype=='update_password'){
+	$username = $_REQUEST['username'];
+	$password = $_REQUEST['password'];
+	$newpass = $_REQUEST['newpass'];
+	$userid = $db->get_var("select id from a_staff where username='$username' and password='$password'");
+	if($username&&$password&&$userid>0){
+		$db->query("update a_staff set password='$newpass' where id='$userid'");
+		$res = array('code'=>1,'msg'=>'更新成功,重新登陆');
+	}else{
+		$res =  array('code'=>2,'msg'=>'账号或密码错误');
+	}
+	echo json_encode($res);
+}
+
 //登录
 if($datatype=='login'){
   //  $storeid = $_REQUEST['storeid'];
@@ -2241,11 +2246,11 @@ if($datatype=='day_money_index'){
         //     if($v['type']!='收银'){
         //         $all += $v['total'];
         //     }
-        // }
-				foreach($list['member'] as $v){
-				    if($v['type']=='充值' ||$v['type']=='会员卡'){
-				        $all += $v['total'];
-				    }
+        // }
+				foreach($list['member'] as $v){
+				    if($v['type']=='充值' ||$v['type']=='会员卡'){
+				        $all += $v['total'];
+				    }
 				}
         foreach($list['member'] as &$v){
             if($v['type']=='充值' ||$v['type']=='会员卡'){
@@ -2462,18 +2467,18 @@ if($datatype=='get_signbill_list'){
     echo json_encode($res);
 }
 
-//还款
-if($datatype=='repayment'){
-    $storeid = $_REQUEST['storeid'];
-    $member_id = $_REQUEST['member_id'];
-    $ids = $_REQUEST['id'];//欠款列表id
-    $pay_type = $_REQUEST['pay_type'];
-    $sum = 0;
+//还款
+if($datatype=='repayment'){
+    $storeid = $_REQUEST['storeid'];
+    $member_id = $_REQUEST['member_id'];
+    $ids = $_REQUEST['id'];//欠款列表id
+    $pay_type = $_REQUEST['pay_type'];
+    $sum = 0;
     if($ids){
-			
-        foreach($ids as $v){
-            $money = $db->get_var("select money from a_member_signbill_list where id=$v");
-            $sum +=$money;
+			
+        foreach($ids as $v){
+            $money = $db->get_var("select money from a_member_signbill_list where id=$v");
+            $sum +=$money;
         }
 				
 				//判断会员卡余额
@@ -2508,15 +2513,15 @@ if($datatype=='repayment'){
 				}
 				
 				
-				
-        $db->query("update fly_member set signbill=signbill-$sum where member_id=$member_id and storeid=$storeid");
-        $res = array('code' => 1, 'msg' => '成功');
-        echo json_encode($res);
-    }else{
-        $res = array('code' =>2, 'msg' => '请选择还款项目');
-        echo json_encode($res);
-    }
-
+				
+        $db->query("update fly_member set signbill=signbill-$sum where member_id=$member_id and storeid=$storeid");
+        $res = array('code' => 1, 'msg' => '成功');
+        echo json_encode($res);
+    }else{
+        $res = array('code' =>2, 'msg' => '请选择还款项目');
+        echo json_encode($res);
+    }
+
 }
 
 
@@ -2848,7 +2853,6 @@ if($datatype=='insert_sign'){
 				
 				//添加积分值到门店
 				//$integral=$db->get_var("select integral from pos_integral_setting where id=1");
-				// $db->query("update fly_shop set integral=integral+$integral where shop_id=$storeid");
 				$db->query("update fly_shop set integral_sum=integral_sum+$integral where shop_id=$storeid");
         $res = array('code'=>1,'msg'=>'成功');
     }
@@ -2869,8 +2873,7 @@ if($datatype=='get_sign_list'){
             $new[]=$arr;
         }
     }
-    // $sum = $db->get_var("select sum(integral) from a_sign where storeid=$storeid");
-		$sum = $db->get_var("select sum(integral_sum) from fly_shop where shop_id=$storeid");
+    $sum = $db->get_var("select sum(integral_sum) from fly_shop where shop_id=$storeid");
     $count = $db->get_var("select count(id) from a_sign where storeid=$storeid");
     $res = array('code'=>1,'msg'=>'成功','data'=>$new,'count'=>$count,'sum'=>$sum);
     echo json_encode($res);
